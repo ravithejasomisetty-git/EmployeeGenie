@@ -1,0 +1,32 @@
+# uv uses this file to manage the local application environment.
+[project]
+name = "employee-genie"
+version = "0.1.0"
+description = "Employee policy ingestion and metadata-routed RAG chat application"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "openai>=2.0,<3",
+    "pinecone>=7,<11",
+    "pydantic>=2.11,<3",
+    "python-dotenv>=1.1,<2",
+    "tiktoken>=0.11,<1",
+    "streamlit>=1.57,<2",
+    "langchain-core>=1.6.12,<2",
+    "langchain-openai>=1.7.2,<2",
+    "langchain-pinecone>=0.2.13,<0.3",
+]
+
+# uv sync installs the dev group by default. Use --no-dev for runtime only.
+[dependency-groups]
+dev = ["pytest>=8,<10"]
+
+[tool.uv]
+# This application runs from scripts; it does not need to be built as a wheel.
+package = false
+
+[tool.pytest.ini_options]
+# Collect only our tests, avoiding generated caches and local environment folders.
+testpaths = ["tests"]
+# The pytest console entry point must also find our root-level script modules.
+pythonpath = ["."]

@@ -1,0 +1,223 @@
+[
+  {
+    "question": "In this demo, explain annual compensation review.",
+    "categories": [
+      "hr"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain learning allowance.",
+    "categories": [
+      "hr"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain wellbeing sessions.",
+    "categories": [
+      "hr"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain annual leave requests.",
+    "categories": [
+      "hr"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain medical absence notification.",
+    "categories": [
+      "hr"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain flexible work schedules.",
+    "categories": [
+      "hr"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain security induction training.",
+    "categories": [
+      "compliance"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain incident reporting.",
+    "categories": [
+      "compliance"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain data classification.",
+    "categories": [
+      "compliance"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain access review cycle.",
+    "categories": [
+      "compliance"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain records retention.",
+    "categories": [
+      "compliance"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain supplier security assessment.",
+    "categories": [
+      "compliance"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain create a workspace.",
+    "categories": [
+      "product"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain invite a member.",
+    "categories": [
+      "product"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain member roles.",
+    "categories": [
+      "product"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain create a work item.",
+    "categories": [
+      "product"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain work item status changes.",
+    "categories": [
+      "product"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain review request workflow.",
+    "categories": [
+      "product"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain first day schedule.",
+    "categories": [
+      "onboarding"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain laptop handover.",
+    "categories": [
+      "onboarding"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain account activation.",
+    "categories": [
+      "onboarding"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain multifactor enrollment.",
+    "categories": [
+      "onboarding"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain onboarding buddy program.",
+    "categories": [
+      "onboarding"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "In this demo, explain first week checklist.",
+    "categories": [
+      "onboarding"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "Explain annual compensation review and the onboarding buddy program.",
+    "categories": [
+      "hr",
+      "onboarding"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "Explain records retention and how to create a workspace in Harbor.",
+    "categories": [
+      "compliance",
+      "product"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "Explain security induction training and the first day schedule.",
+    "categories": [
+      "compliance",
+      "onboarding"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "Explain learning allowance, credential storage, and work item status changes.",
+    "categories": [
+      "hr",
+      "compliance",
+      "product"
+    ],
+    "status": "retrieve"
+  },
+  {
+    "question": "What is the policy?",
+    "categories": [],
+    "status": "clarify"
+  },
+  {
+    "question": "Which process do you mean?",
+    "categories": [],
+    "status": "clarify"
+  },
+  {
+    "question": "Write a chocolate cake recipe.",
+    "categories": [],
+    "status": "out_of_scope"
+  },
+  {
+    "question": "What is the weather today?",
+    "categories": [],
+    "status": "out_of_scope"
+  }
+]
