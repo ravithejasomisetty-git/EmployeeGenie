@@ -91,9 +91,6 @@ Classification uses the ingested catalog to choose focused question/category rou
 
 The answer system prompt requests evidence-only claims, preservation of qualifications, and explicit handling of missing/conflicting information. Status can be `answered`, `partial`, or `insufficient_evidence`. Citation validation checks source labels, not whether a passage proves a claim. Similarity scores are not calibrated answer-confidence probabilities. No separate factual-verification model is implemented.
 
-## Documentation
-
-See the [six-page Word process guide](docs/Employee_Genie_Process_Guide.docx) for the dataset overview, ASCII ingestion and question flows, interface behavior, commands and troubleshooting.
 
 ## Code map
 
