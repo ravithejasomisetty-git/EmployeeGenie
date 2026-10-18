@@ -1,16 +1,8 @@
-"""Offline tests for ingestion, retrieval rules, and the Streamlit UI.
+"""Offline ingestion, retrieval, streaming and Streamlit interface tests.
 
-Run with `uv run --locked pytest -q`. pytest discovers functions starting with test_.
-An assert states what must be true; a failed assertion fails that test.
-Mock replaces real services, so these tests make no OpenAI/Pinecone requests.
-First-use tokenization may still download its public vocabulary table.
-
-tmp_path is a pytest-provided temporary directory. monkeypatch temporarily changes
-environment values or objects and restores them afterward. SimpleNamespace
-(aliased as NS) makes lightweight objects whose fields use dot notation, like
-SDK responses. RunnableLambda supplies fake model outputs to real LangChain
-prompt chains, and PineconeVectorStore runs against mocked index responses.
-These tests verify application wiring and rules, not live model accuracy.
+Run with uv run --locked python -m pytest -q.
+Provider calls are mocked; tokenization may download its vocabulary on first use.
+These tests verify application behavior rather than live model accuracy.
 """
 import json
 from pathlib import Path
@@ -31,10 +23,7 @@ DATASET = Path('Dataset/Policy document.json')
 
 
 def test_langchain_prompt_roles_and_literal_braces():
-    """Keep system instructions separate and do not interpret JSON braces as templates.
-
-    Used by: pytest; no model API calls are made.
-    """
+    """Keep system instructions separate and do not interpret JSON braces as templates."""
     rag = object.__new__(RAG)
     rag.ai = Mock()
     captured = []
@@ -54,10 +43,7 @@ def test_langchain_prompt_roles_and_literal_braces():
 
 
 def test_prepared_embedding_adapter_preserves_context():
-    """Embed the same contextual input as before while storing the original passage.
-
-    Used by: pytest; also checks duplicated passage wording with different titles.
-    """
+    """Embed the same contextual input as before while storing the original passage."""
     chunks = [
         {'embedding_text':'Title A\nSection\n\nShared words', 'metadata':{'text':'Shared words'}},
         {'embedding_text':'Title B\nSection\n\nShared words', 'metadata':{'text':'Shared words'}},
@@ -72,10 +58,7 @@ def test_prepared_embedding_adapter_preserves_context():
 
 
 def test_langchain_refusal_does_not_become_policy_answer():
-    """Missing structured output fails clearly rather than displaying invented content.
-
-    Used by: pytest; the runnable returns no answer without contacting OpenAI.
-    """
+    """Missing structured output fails clearly rather than displaying invented content."""
     rag = object.__new__(RAG)
     rag.ai = Mock()
     rag.ai.chat.with_structured_output.return_value = RunnableLambda(lambda messages: None)
@@ -84,11 +67,7 @@ def test_langchain_refusal_does_not_become_policy_answer():
 
 
 def test_configured_dimensions_reach_openai():
-    """The embedding helper uses the configured LangChain model and vector length.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
-    """
+    """The embedding helper uses the configured LangChain model and vector length."""
     ai = Mock()
     ai.embeddings.model = 'text-embedding-3-small'
     ai.embeddings.dimensions = 512
@@ -99,11 +78,7 @@ def test_configured_dimensions_reach_openai():
 
 
 def test_dimensions_change_namespace(prepared):
-    """Identical text with a different vector length is a distinct dataset version.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
-    """
+    """Identical text with a different vector length is a distinct dataset version."""
     docs, (_, original, _) = prepared
     _, changed, parameters = prepare(docs, DATASET.as_posix(), 'text-embedding-3-small', dimensions=1536)
     assert changed != original
@@ -111,11 +86,7 @@ def test_dimensions_change_namespace(prepared):
 
 
 def test_old_index_dimensions_rejected(monkeypatch):
-    """A mismatch must not delete or recreate the existing index.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
-    """
+    """A mismatch must not delete or recreate the existing index."""
     import policy_helper.ai_service_clients as services
     monkeypatch.setenv('OPENAI_API_KEY', 'fake')
     monkeypatch.setenv('PINECONE_API_KEY', 'fake')
@@ -133,11 +104,7 @@ def test_old_index_dimensions_rejected(monkeypatch):
 
 
 def test_report_dimensions_must_match(tmp_path):
-    """An old namespace cannot be queried using a new embedding length.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
-    """
+    """An old namespace cannot be queried using a new embedding length."""
     path = tmp_path / 'report.json'
     path.write_text(json.dumps({'status':'verified','index':'index','namespace':'ns',
                                'parameters':{'model':'model','dimensions':1536}}))
@@ -147,11 +114,7 @@ def test_report_dimensions_must_match(tmp_path):
 
 
 def test_chunk_statistics_measures_embedding_prefix_separately():
-    """Report real token counts and descriptive word counts, including empty input.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
-    """
+    """Report real token counts and descriptive word counts, including empty input."""
     chunks = [{'embedding_text': 'Policy title\nEligibility\n\nEmployees qualify.',
                'metadata': {'text': 'Employees qualify.', 'category': 'hr'}}]
     result = chunk_statistics(chunks)
@@ -165,11 +128,7 @@ def test_chunk_statistics_measures_embedding_prefix_separately():
 
 
 def test_dry_run_prints_custom_chunk_settings(monkeypatch, capsys):
-    """CLI controls reach preparation and dry runs never create service clients.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
-    """
+    """CLI controls reach preparation and dry runs never create service clients."""
     import ingest_policies as cli
     monkeypatch.setattr('sys.argv', ['ingest_policies.py', '--dry-run', '--chunk-size', '800', '--chunk-overlap', '120'])
     connect = Mock(side_effect=AssertionError('Dry run must not connect'))
@@ -185,11 +144,7 @@ def test_dry_run_prints_custom_chunk_settings(monkeypatch, capsys):
 
 @pytest.mark.parametrize('size,overlap', [('0','0'), ('600','600'), ('600','-1')])
 def test_invalid_chunk_options_fail_before_service_calls(monkeypatch, size, overlap):
-    """Reject invalid budgets with argparse's normal command-line error exit.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
-    """
+    """Reject invalid budgets with argparse's normal command-line error exit."""
     import ingest_policies as cli
     monkeypatch.setattr('sys.argv', ['ingest_policies.py','--chunk-size',size,'--chunk-overlap',overlap])
     with pytest.raises(SystemExit) as error:
@@ -203,20 +158,13 @@ def prepared():
 
     A fixture is a reusable test setup step. pytest injects its returned value
     into any test with a parameter named prepared. No vectors are uploaded.
-
-    Used by:
-        Injected automatically by pytest into tests declaring the prepared fixture parameter: test_dimensions_change_namespace(), test_real_dataset_and_chunks(), test_upload_verification_failure(), and test_repeat_upsert_uses_same_ids().
     """
     docs = load_documents(DATASET)
     return docs, prepare(docs, DATASET.as_posix(), 'text-embedding-3-small')
 
 
 def test_real_dataset_and_chunks(prepared):
-    """Check token limits, inherited categories, unique IDs, and namespace stability.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
-    """
+    """Check token limits, inherited categories, unique IDs, and namespace stability."""
     docs, (chunks, namespace, _) = prepared
     assert len(docs) == 80
     assert len({c['id'] for c in chunks}) == len(chunks)
@@ -239,9 +187,6 @@ def test_invalid_dataset_fails(tmp_path, mutation):
 
     parametrize asks pytest to execute this function once for each mutation value.
     pytest.raises succeeds only if the enclosed operation raises the expected error.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
     """
     raw = json.loads(DATASET.read_text(encoding='utf-8'))[:2]
     if mutation == 'duplicate': raw[1]['id'] = raw[0]['id']
@@ -254,22 +199,14 @@ def test_invalid_dataset_fails(tmp_path, mutation):
 
 
 def test_cleaning_preserves_warning():
-    """Markup removal must keep policy caveats and text inside template sections.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
-    """
+    """Markup removal must keep policy caveats and text inside template sections."""
     text = '---\ntitle: Test\n---\n<span>Use The Loop for current guidance.</span>\n{{% details %}}Exception{{% /details %}}'
     clean = clean_content(text)
     assert 'Use The Loop' in clean and 'Exception' in clean and '<span>' not in clean
 
 
 def test_upload_verification_failure(prepared):
-    """A fake service returning no stored vectors must not pass verification.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
-    """
+    """A fake service returning no stored vectors must not pass verification."""
     chunks = prepared[1][0][:2]
     index = Mock()
     index.fetch.return_value = NS(vectors={})
@@ -277,11 +214,7 @@ def test_upload_verification_failure(prepared):
 
 
 def test_repeat_upsert_uses_same_ids(prepared):
-    """Two identical uploads send identical records instead of random new IDs.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
-    """
+    """Two identical uploads send identical records instead of random new IDs."""
     chunks = prepared[1][0][:2]
     index = Mock()
     # return_value is the canned response returned whenever this fake method runs.
@@ -299,11 +232,7 @@ def test_repeat_upsert_uses_same_ids(prepared):
 
 
 def test_multicategory_retrieval_filters_and_coverage():
-    """Ensure every selected category contributes evidence and filters remain scoped.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
-    """
+    """Ensure every selected category contributes evidence and filters remain scoped."""
     # Bypass __init__ only in this focused test, avoiding readiness/network setup.
     rag = object.__new__(RAG)
     rag.settings = NS(embedding_model='test', namespace='verified', embedding_dimensions=512)
@@ -312,11 +241,7 @@ def test_multicategory_retrieval_filters_and_coverage():
     rag.ai.embeddings.dimensions = 512
     rag.ai.embeddings.embed_documents.side_effect = lambda texts: [[0.1]*512 for _ in texts]
     def query(**kwargs):
-        """Return a Pinecone-style dictionary consumed by the real LangChain store.
-
-        Used by:
-            Invoked by the mocked index.query() through Mock.side_effect inside test_multicategory_retrieval_filters_and_coverage(); no real Pinecone request is made.
-        """
+        """Return a Pinecone-style dictionary consumed by the real LangChain store."""
         cat = kwargs['filter']['category']['$eq']
         sub = kwargs['filter'].get('subcategory', {}).get('$eq', 'other')
         return {'matches': [{'id':f'{cat}-{sub}', 'score':.8,
@@ -336,11 +261,7 @@ def test_multicategory_retrieval_filters_and_coverage():
 
 
 def test_subcategory_must_exist():
-    """A schema-valid string must still match the ingested category vocabulary.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
-    """
+    """A schema-valid string must still match the ingested category vocabulary."""
     decision = Classification(status='retrieve', routes=[Route(question='x', category='hr', subcategory='fake')],
                               explanation='', clarification=None)
     with pytest.raises(ValueError): validate_routes(decision, [{'category':'hr','subcategory':'benefits'}])
@@ -348,31 +269,19 @@ def test_subcategory_must_exist():
 
 @pytest.mark.parametrize('body,labels', [('Claim [9]', [9]), ('Claim [1]', []), ('Uncited claim', [])])
 def test_bad_citations_rejected(body, labels):
-    """Reject nonexistent, mismatched, or missing source numbers in policy answers.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
-    """
+    """Reject nonexistent, mismatched, or missing source numbers in policy answers."""
     with pytest.raises(ValueError):
         validate_answer(GeneratedAnswer(status='answered', answer=body, citations=labels), 2)
 
 
 def test_valid_partial_answer():
-    """Allow a cited answer that explicitly leaves an unsupported part unanswered.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
-    """
+    """Allow a cited answer that explicitly leaves an unsupported part unanswered."""
     answer = GeneratedAnswer(status='partial', answer='Training is required [1]. Salary details are absent.', citations=[1])
     assert validate_answer(answer, 1) == answer
 
 
 def test_clarification_does_not_retrieve():
-    """Ambiguous questions ask for detail without spending a vector-search call.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
-    """
+    """Ambiguous questions ask for detail without spending a vector-search call."""
     rag = object.__new__(RAG)
     rag.classify = Mock(return_value=Classification(status='clarify', routes=[], explanation='', clarification='Which policy?'))
     rag.retrieve = Mock()
@@ -381,20 +290,12 @@ def test_clarification_does_not_retrieve():
 
 
 def test_evidence_deduplicated():
-    """A passage found by two routes should appear only once in final evidence.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
-    """
+    """A passage found by two routes should appear only once in final evidence."""
     assert len(select_evidence([[{'id':'a'}], [{'id':'a'},{'id':'b'}]])) == 2
 
 
 def test_report_must_be_verified(tmp_path):
-    """The chat readiness gate must reject a report marked failed.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
-    """
+    """The chat readiness gate must reject a report marked failed."""
     path = tmp_path / 'report.json'
     path.write_text(json.dumps({'status':'failed'}))
     settings = Settings('index','ns','model','chat',str(path),'aws','us-east-1')
@@ -405,9 +306,6 @@ def test_ui_setup_without_api_calls(monkeypatch, tmp_path):
     """An unconfigured app shows setup guidance and disables question submission.
 
     AppTest runs Streamlit in-process without launching a browser or local server.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
     """
     from streamlit.testing.v1 import AppTest
     monkeypatch.setenv('INGESTION_REPORT', str(tmp_path / 'missing.json'))
@@ -422,9 +320,6 @@ def test_end_to_end_multicategory_answer(tmp_path):
 
     This checks application wiring and citation handling. Because we supply the
     model decisions ourselves, it does not measure real classification accuracy.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
     """
     path = tmp_path / 'verified.json'
     cat = [{'category':'hr','subcategory':'compensation'},
@@ -444,11 +339,7 @@ def test_end_to_end_multicategory_answer(tmp_path):
     ai.embeddings.dimensions = 512
     ai.embeddings.embed_documents.side_effect = lambda texts: [[0.1]*512 for _ in texts]
     def query(**kwargs):
-        """Return category-matched Pinecone records for the LangChain vector store.
-
-        Used by:
-            Invoked by the mocked index.query() through Mock.side_effect inside test_end_to_end_multicategory_answer(); no real Pinecone request is made.
-        """
+        """Return category-matched Pinecone records for the LangChain vector store."""
         category = kwargs['filter']['category']['$eq']
         subcategory = next(c['subcategory'] for c in cat if c['category'] == category)
         return {'matches':[{'id':category,'score':.9,'metadata':{'category':category,
@@ -468,9 +359,6 @@ def test_ui_chat_and_clear(monkeypatch, tmp_path, caplog):
 
     Dummy credentials and a mocked RAG object enable the UI without authenticating
     to any provider. They are local test strings, not usable account keys.
-
-    Used by:
-        Discovered and executed by pytest via uv run --locked pytest -q; not called by the running application.
     """
     from streamlit.testing.v1 import AppTest
     import policy_helper.policy_question_answering as module
@@ -605,3 +493,48 @@ def test_citation_correction_does_not_stream_a_second_time():
     assert calls[0] is not None
     assert calls[1] is None
     assert result == valid
+
+
+def test_declared_valid_citations_are_displayed_when_inline_markers_omitted():
+    rag = object.__new__(RAG)
+    rag.structured = Mock(return_value=GeneratedAnswer(
+        status='answered', answer='Full-time employees have 20 planned leave days per calendar year in this fictional scheme.',
+        citations=[1]))
+    result = rag.generate('How many leaves is an employee eligible for annually?',
+                          [{'metadata': {'text': 'Full-time employees have 20 planned leave days per calendar year.'}}], [])
+    assert result.status == 'answered'
+    assert result.answer.endswith('Sources: [1]')
+    assert result.citations == [1]
+    assert rag.structured.call_count == 1
+    assert validate_answer(result, 1) == result
+
+
+def test_top_five_evidence_ranked_and_deduplicated():
+    groups = [
+        [{'id': str(i), 'score': i / 10} for i in range(8)],
+        [{'id': '7', 'score': .95}, {'id': 'extra', 'score': .85}],
+    ]
+    selected = select_evidence(groups)
+    assert [item['id'] for item in selected] == ['7', 'extra', '6', '5', '4']
+    assert selected[0]['score'] == .95
+    assert len(select_evidence([])) == 0
+
+
+def test_retrieval_requests_five_and_returns_only_five(monkeypatch):
+    from langchain_core.documents import Document
+    import policy_helper.policy_question_answering as module
+    rag = object.__new__(RAG)
+    rag.index = Mock()
+    rag.ai = Mock()
+    rag.settings = NS(namespace='demo', embedding_model='demo', embedding_dimensions=2)
+    store = Mock()
+    store.similarity_search_by_vector_with_score.return_value = [
+        (Document(id=str(i), page_content=f'Policy {i}', metadata={'category': 'hr', 'subcategory': 'leave'}), i / 10)
+        for i in range(8)
+    ]
+    monkeypatch.setattr(module, 'vector_store', lambda *args: store)
+    monkeypatch.setattr(module, 'embed', lambda *args: [[0, 1]])
+    evidence, _ = rag.retrieve([Route(question='Annual leave?', category='hr', subcategory='leave')])
+    assert len(evidence) == 5
+    assert [item['id'] for item in evidence] == ['7', '6', '5', '4', '3']
+    assert all(call.kwargs['k'] == 5 for call in store.similarity_search_by_vector_with_score.call_args_list)

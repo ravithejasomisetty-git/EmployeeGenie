@@ -61,7 +61,7 @@ Open the local URL printed in the terminal, usually http://localhost:8501. Keep 
 
 Questions need at least two whitespace-separated words containing letters or numbers, up to 6,000 characters. Spaces and punctuation are allowed; spaces-only, punctuation-only, and one-word inputs are rejected before changing history or calling RAG. The two-word rule is UI-only; direct backend/evaluation calls check blank input and length.
 
-Try ?How does annual compensation review work?? or ?Explain onboarding buddies and annual compensation review.? Follow-ups use the last six messages in the browser session. Clear conversation removes that history; it is not stored in a database.
+Try "How many leaves is an employee eligible for annually?" or "Explain onboarding buddies and annual compensation review." Follow-ups use the last six messages in the browser session. Clear conversation removes that history; it is not stored in a database.
 
 ## Execution flow
 
@@ -87,9 +87,13 @@ policy_chat_app -> readiness checks -> input validation -> recent history
   -> show_result() -> save answer in session history
 ```
 
-Classification uses the ingested catalog to choose focused question/category routes. It does not establish that an answer exists. Each route searches within its category; subcategory routes also include broader candidates from the same category. Round-robin selection deduplicates and selects up to eight passages, giving each route a turn without guaranteeing evidence for every part.
+Classification uses the ingested catalog to choose focused question/category routes. It does not establish that an answer exists. Each route searches within its category; subcategory routes also include broader candidates from the same category. Each filtered search requests at most five candidates. Candidates are deduplicated and ranked by similarity across routes; only the top five unique passages are passed to the LLM for answer synthesis. Multi-topic questions can have uneven coverage within this five-passage budget.
 
 The answer system prompt requests evidence-only claims, preservation of qualifications, and explicit handling of missing/conflicting information. Status can be `answered`, `partial`, or `insufficient_evidence`. Citation validation checks source labels, not whether a passage proves a claim. Similarity scores are not calibrated answer-confidence probabilities. No separate factual-verification model is implemented.
+
+## Documentation
+
+See the [six-page Word process guide](docs/Employee_Genie_Process_Guide.docx) for the dataset overview, ASCII ingestion and question flows, interface behavior, commands and troubleshooting.
 
 ## Code map
 
@@ -103,9 +107,9 @@ The answer system prompt requests evidence-only claims, preservation of qualific
 | `evaluate_policy_answers.py` | Opt-in live routing evaluation and review output |
 | `tests/test_policy_pipeline.py` | Offline pipeline and Streamlit tests |
 
-Functions include explanatory docstrings and caller references. `system_prompt` holds application instructions; `user_prompt` is the original user input. The model payload also contains history and catalog/evidence, and focused `Route.question` values are classifier-generated search questions.
+Docstrings describe function contracts and comments explain non-obvious behavior. `system_prompt` holds application instructions; `user_prompt` is the original user input. The model payload also contains history and catalog/evidence, and focused `Route.question` values are classifier-generated search questions.
 
-LangChain uses `ChatPromptTemplate | ChatOpenAI.with_structured_output(...)`, `OpenAIEmbeddings`, and `PineconeVectorStore`. `PreparedBatchEmbeddings` preserves title + heading + passage embedding inputs while storing just the passage under metadata key `text`. Retrieval converts LangChain Documents back to the source dictionaries used by the UI. The Pinecone SDK remains for index administration, fetch verification, and ingestion search checks.
+LangChain uses streaming prompt/model chains, schema-constrained responses, `OpenAIEmbeddings`, and `PineconeVectorStore`. Initial answer generation streams partial answer text; citation corrections run silently. Valid declared references are displayed when inline markers are omitted. `PreparedBatchEmbeddings` preserves title + heading + passage embedding inputs while storing just the passage under metadata key `text`. Retrieval converts LangChain Documents back to the source dictionaries used by the UI. The Pinecone SDK remains for index administration, fetch verification, and ingestion search checks.
 
 ## Verification
 
@@ -118,7 +122,7 @@ uv run --locked python evaluate_policy_answers.py
 
 Offline tests use real LangChain prompt/vector-store adapters with fake provider responses. They check validation, chunk sizes, namespace behavior, upload compatibility, multi-category filters, citation numbering, and UI interactions. They do not demonstrate live API access or factual model accuracy.
 
-`evaluation/questions.json` contains 32 draft routing cases. Live evaluation runs each independently without history and writes routing accuracy, answers, and sources to `artifacts/evaluation.json`. Review expected labels and factual support manually; the script does not calculate answer correctness, expected-document recall, or calibrated confidence. A 90% routing score is a proposed evaluation target, not an achieved result.
+`evaluation/questions.json` contains 33 draft routing cases. Live evaluation runs each independently without history and writes routing accuracy, answers, and sources to `artifacts/evaluation.json`. Review expected labels and factual support manually; the script does not calculate answer correctness, expected-document recall, or calibrated confidence. A 90% routing score is a proposed evaluation target, not an achieved result.
 
 ## Repository and local files
 
@@ -136,4 +140,4 @@ On Windows, stop Streamlit before synchronizing dependencies: loaded modules can
 
 ## Limits
 
-This is a local shared-access demo, without authentication, authorization, deployment configuration, persistent chat storage, live policy updates, hybrid search, or reranking. Document labels can be coarse, retrieval can miss exceptions, and only eight passages enter an answer. Prompt instructions reduce but cannot eliminate hallucination or prompt injection. Read the sources and snapshot caveats; linked pages are not fetched. This application does not claim production readiness or current-policy accuracy.
+This is a local shared-access demo, without authentication, authorization, deployment configuration, persistent chat storage, live policy updates, hybrid search, or reranking. Document labels can be coarse, retrieval can miss exceptions, and at most five passages enter an answer. Prompt instructions reduce but cannot eliminate hallucination or prompt injection. Read the sources and snapshot caveats; linked pages are not fetched. This application does not claim production readiness or current-policy accuracy.

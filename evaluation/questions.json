@@ -219,5 +219,12 @@
     "question": "What is the weather today?",
     "categories": [],
     "status": "out_of_scope"
+  },
+  {
+    "question": "How many leaves is an employee eligible for annually?",
+    "categories": [
+      "hr"
+    ],
+    "status": "retrieve"
   }
 ]

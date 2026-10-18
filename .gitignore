@@ -18,3 +18,6 @@ artifacts/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Temporary Office document lock files
+~$*

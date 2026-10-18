@@ -1,13 +1,8 @@
-"""Standalone command-line entry point for ETL (extract, transform, load).
+"""Validate, chunk, embed and upload policies, then verify the stored snapshot.
 
-Extract: read and validate policy JSON. Transform: clean text, split passages,
-and generate embeddings through LangChain. Load: PineconeVectorStore.add_texts()
-upserts vectors and metadata. PreparedBatchEmbeddings preserves contextual input.
-Finally, verify the upload and save a report that the chat application checks.
-
-Run `uv run --locked python ingest_policies.py --dry-run` to validate/chunk without service credentials
-or OpenAI/Pinecone calls. First-use tokenization may download a public encoding
-table. Run `uv run --locked python ingest_policies.py` for real ingestion, which uses hosted services.
+Run uv run --locked python ingest_policies.py --dry-run for preparation only.
+Omit --dry-run to use hosted services and write the ingestion report.
+Tokenization may download its public vocabulary on first use.
 """
 import argparse
 from collections import Counter
@@ -32,19 +27,11 @@ def chunk_statistics(chunks):
     Report both so the configured ceiling and the readable content are distinct.
     Word counts use whitespace splitting and are descriptive, not sizing rules.
     Totals include repeated overlap and prefixes, not just unique document text.
-
-    Used by:
-        This file: main(), while building the preparation summary for both dry runs and live ingestion.
-        Direct test/fixture callers in tests/test_policy_pipeline.py: test_chunk_statistics_measures_embedding_prefix_separately().
     """
     encoder = tiktoken.get_encoding('cl100k_base')
 
     def describe(counts):
-        """Summarize one measurement across all chunks, including an empty input.
-
-        Used by:
-            Its enclosing chunk_statistics() function, for embedding-token, passage-token, and passage-word summaries.
-        """
+        """Summarize one measurement across all chunks, including an empty input."""
         return {
             'minimum': min(counts, default=0),
             'median': median(counts) if counts else 0,
@@ -71,16 +58,10 @@ def verify(index, chunks, namespace, attempts=12, delay=5):
     Pinecone writes can take time to become visible. Recheck with a bounded
     delay instead of declaring success as soon as the upload request returns.
     This verifies stored text/metadata, not answer quality or vector accuracy.
-
-    Used by:
-        This file: ingest(), after all vector batches have been uploaded.
-        Direct test/fixture callers in tests/test_policy_pipeline.py: test_upload_verification_failure().
     """
     for attempt in range(attempts):
         missing = []
-        # range(start, stop, step) visits batch offsets 0, 100, 200, ... .
         for offset in range(0, len(chunks), 100):
-            # A slice [start:end] includes start but excludes end.
             batch = chunks[offset:offset+100]
             response = retry(lambda: index.fetch(ids=[c['id'] for c in batch], namespace=namespace))
             for chunk in batch:
@@ -102,10 +83,6 @@ def ingest(index, ai, chunks, namespace, model, dimensions=512):
     LangChain add_texts() uploads synchronously in batches of at most 64. The batch
     adapter embeds contextual input while the vector store saves readable passages.
     Direct Pinecone SDK fetch/query calls then verify storage and category search.
-
-    Used by:
-        This file: main(), for live ingestion only; skipped when --dry-run is supplied.
-        Direct test/fixture callers in tests/test_policy_pipeline.py: test_repeat_upsert_uses_same_ids().
     """
     for offset in range(0, len(chunks), 64):
         batch = chunks[offset:offset+64]
@@ -119,9 +96,8 @@ def ingest(index, ai, chunks, namespace, model, dimensions=512):
             embedding_chunk_size=64, batch_size=64, async_req=False,
         ))
     verify(index, chunks, namespace)
-   
+
     # Check filtered semantic retrieval, not only record fetch visibility.
-    # Braces create a set of unique categories; next(...) selects one sample per category.
     for category in sorted({c['metadata']['category'] for c in chunks}):
         sample = next(c for c in chunks if c['metadata']['category'] == category)
         vector = embed(ai, [sample['embedding_text']], model, dimensions)[0]
@@ -137,23 +113,18 @@ def ingest(index, ai, chunks, namespace, model, dimensions=512):
 
 
 def main():
-    """Coordinate CLI arguments, local preparation, service calls, and reporting.
+    """Coordinate CLI arguments, local preparation, service calls, and reporting."""
 
-    Used by:
-        This file: the if __name__ == "__main__" entry-point block. Run with uv run --locked python ingest_policies.py.
-    """
-    
-    # argparse turns command-line flags into fields on args and provides --help.
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--dataset',
                          type=Path,
                          default=Path('Dataset/Policy document.json'),
                          help='Policy JSON file (default: %(default)s).')
-    
+
     parser.add_argument('--dry-run',
                         action='store_true',
                         help='Validate, prepare, and display statistics without uploading.')
-    
+
     # These values are passed explicitly to prepare(), making the chunking controls
     # discoverable here rather than relying on defaults hidden in another module.
     parser.add_argument('--chunk-size',
@@ -161,16 +132,16 @@ def main():
                         default=600,
                         metavar='TOKENS',
                         help='Maximum tokens per embedding input, including title/heading (default: %(default)s).')
-    
+
     parser.add_argument('--chunk-overlap',
                         type=int,
                         default=100,
                         metavar='TOKENS',
                         help='Overlap within a section; must be smaller than chunk size (default: %(default)s).')
-    
+
     args = parser.parse_args()
 
-    
+
     # Validate before reading data or connecting to services. A section's title and
     # heading must also fit; prepare() performs that content-dependent budget check.
     if args.chunk_size <= 0:
@@ -189,8 +160,7 @@ def main():
         size=args.chunk_size, overlap=args.chunk_overlap,
         dimensions=settings.embedding_dimensions,
     )
-    
-    # Counter tallies how many documents belong to each category.
+
     summary = {'documents': len(documents), 'chunks': len(chunks), 'namespace': namespace,
                'embedding_model': settings.embedding_model,
                'embedding_dimensions': settings.embedding_dimensions,
@@ -216,17 +186,16 @@ def main():
     if args.dry_run:
         print('Dry run passed. No external services called and no report written.')
         return
-    
-    # **summary copies its key/value pairs into the new dictionary.
+
     # The catalog lets chat route against the vocabulary from this exact ingestion.
     report = {**summary,
               'status': 'running',
               'index': settings.index,
               'parameters': parameters,
               'catalog': catalog(documents), 'verified_at': None, 'error': None}
-    
+
     path = Path(settings.report)
-    path.parent.mkdir(parents=True, exist_ok=True)    
+    path.parent.mkdir(parents=True, exist_ok=True)
     # Invalidate any previous success before touching the namespace.
     path.write_text(json.dumps(report, indent=2), encoding='utf-8')
 

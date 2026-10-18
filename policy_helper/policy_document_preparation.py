@@ -1,13 +1,8 @@
-"""Prepare policy JSON for search without calling OpenAI or Pinecone.
+"""Validate policy JSON and prepare searchable passages without service calls.
 
-Read this module in order: schema classes -> load_documents -> clean_content ->
-prepare -> catalog. A document is a full source record; a chunk is a smaller
-passage that can be retrieved independently. Metadata describes a passage so
-Pinecone can restrict a search to categories such as HR or onboarding.
-
-Python reading guide: a dict stores named values, a list stores ordered values,
-and a set stores unique values. Type annotations such as list[str] describe
-expected data. Pydantic performs the actual input validation at runtime.
+Preparation cleans markup, chunks sections and creates deterministic identities.
+Metadata supports category-filtered retrieval. Tokenization may download its
+public vocabulary on first use.
 """
 import hashlib
 import html
@@ -19,7 +14,6 @@ from typing import Literal
 import tiktoken
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-# Literal restricts this field to the exact labels already used in the dataset.
 Category = Literal['hr', 'compliance', 'product', 'onboarding']
 # Increment this when preparation behavior changes so new data gets a new namespace.
 PIPELINE_VERSION = '1'
@@ -58,9 +52,6 @@ class Document(BaseModel):
 
         The decorators make Pydantic run this rule on both fields automatically.
         Returning the original value preserves the source text exactly.
-
-        Used by:
-            Called automatically by Pydantic when Document fields are validated, normally through load_documents().
         """
         if not value.strip():
             raise ValueError('must not be blank')
@@ -72,10 +63,6 @@ def load_documents(path: Path) -> list[Document]:
 
     Validation finishes for the entire file before ingestion can write anything.
     utf-8-sig also accepts UTF-8 files with a byte-order marker from Windows tools.
-
-    Used by:
-        ingest_policies.py: main(), before preparing or uploading documents.
-        Direct test/fixture callers in tests/test_policy_pipeline.py: prepared(), test_invalid_dataset_fails().
     """
     raw = json.loads(path.read_text(encoding='utf-8-sig'))
     if not isinstance(raw, list) or not raw:
@@ -84,7 +71,6 @@ def load_documents(path: Path) -> list[Document]:
     documents, errors, ids = [], [], set()
     for position, record in enumerate(raw):
         try:
-            # Convert a plain JSON dictionary into an object with checked fields.
             doc = Document.model_validate(record)
             if doc.id in ids:
                 raise ValueError('duplicate document ID')
@@ -99,16 +85,10 @@ def load_documents(path: Path) -> list[Document]:
 
 
 def clean_content(text: str) -> str:
-    """Remove display markup while retaining readable policy wording.
+    """Remove display markup while preserving readable policy wording.
 
-    re.sub means 'replace matches of this regular-expression pattern'. re.S lets
-    a match span lines; re.I ignores letter case. This is cleanup for this dataset,
-    not a general-purpose HTML parser or a guarantee against prompt injection.
-    The original JSON is never modified.
-
-    Used by:
-        This module: prepare(), once for each source document.
-        Direct test/fixture callers in tests/test_policy_pipeline.py: test_cleaning_preserves_warning().
+    This dataset-specific cleanup leaves the source JSON unchanged. It is not
+    a general-purpose HTML parser or a prompt-injection defense.
     """
     # Frontmatter is the introductory --- block containing page publishing fields.
     text = re.sub(r'\A---\s*\n.*?\n---\s*\n', '', text, count=1, flags=re.S)
@@ -135,10 +115,6 @@ def prepare(documents: list[Document], source: str, model: str, size=600, overla
     embedding input includes extra context; metadata['text'] holds the passage
     shown to the answer model. The namespace fingerprints the prepared data and
     settings, allowing identical runs to target the same logical partition.
-
-    Used by:
-        ingest_policies.py: main(), in both dry-run and live ingestion modes.
-        Direct test/fixture callers in tests/test_policy_pipeline.py: prepared(), test_dimensions_change_namespace(), test_real_dataset_and_chunks().
     """
     if not 0 <= overlap < size:
         raise ValueError('Require 0 <= overlap < chunk size')
@@ -177,7 +153,7 @@ def prepare(documents: list[Document], source: str, model: str, size=600, overla
                     continue
                 if current:
                     windows.append(current)
-                    # [-overlap:] selects the last N tokens; reuse them in the next chunk.
+                    # Retain the overlap tail within the current section.
                     tail = encoder.encode(current)[-overlap:] if overlap else []
                     current = encoder.decode(tail)
                 tokens = encoder.encode(current + ('\n\n' if current else '') + paragraph)
@@ -191,13 +167,11 @@ def prepare(documents: list[Document], source: str, model: str, size=600, overla
             for text in windows:
                 # Chunk positions restart for each document, not for each section.
                 number = sum(c['metadata']['document_id'] == doc.id for c in chunks)
-                # model_dump converts the checked schema back to a plain dictionary.
                 # Flatten its fields for Pinecone; omit empty optional arrays.
                 metadata = {k: v for k, v in doc.metadata.model_dump().items() if v != []}
                 metadata.update(document_id=doc.id, chunk_index=number,
                                 section_heading=heading, source_file=source, text=text)
-                # Hashing makes IDs ASCII-safe and repeatable. :04d pads positions
-                # with zeros, for example 0003. This is identity, not encryption.
+                # Stable ASCII IDs identify chunks; hashing is not encryption.
                 identifier = hashlib.sha256(doc.id.encode()).hexdigest()[:24] + f'-{number:04d}'
                 chunks.append({'id': identifier, 'metadata': metadata, 'embedding_text': prefix + text})
     # Dimensions belong in the fingerprint: vectors of different lengths must not mix.
@@ -215,9 +189,6 @@ def catalog(documents):
 
     The classifier needs to know what can be searched. The answer stage receives
     actual retrieved passages later; catalog titles alone are not answer evidence.
-
-    Used by:
-        ingest_policies.py: main(), when building the ingestion report used by the query classifier.
     """
     return [{'category': d.metadata.category, 'subcategory': d.metadata.subcategory,
              'title': d.metadata.title, 'topics': d.metadata.topics} for d in documents]

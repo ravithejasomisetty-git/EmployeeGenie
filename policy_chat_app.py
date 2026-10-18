@@ -1,15 +1,8 @@
-"""Local chat UI. Start with: uv run --locked streamlit run policy_chat_app.py.
+"""Streamlit chat interface for the verified policy snapshot.
 
-Streamlit executes this file from top to bottom when a browser session opens
-and again when a widget changes. session_state preserves that session's messages
-across reruns; cache_resource reuses expensive service clients. Keeping these
-separate avoids reconnecting unnecessarily without sharing users' chat histories.
-
-Readiness is checked before enabling chat. This file never ingests documents:
-the separate ingest_policies.py command must first produce a verified report.
-Valid submissions contain at least two whitespace-separated words with letters
-or numbers. Spaces/punctuation are allowed inside otherwise valid questions.
-The question and last six messages flow into the LangChain-backed RAG service.
+Run with uv run --locked python -m streamlit run policy_chat_app.py.
+Session state holds conversation history; cached resources hold service clients.
+Ingestion runs separately through ingest_policies.py.
 """
 import logging
 import os
@@ -27,7 +20,6 @@ st.title('Employee Genie')
 st.caption('Explore HR, onboarding, compliance, and product documentation.')
 
 settings = Settings.read()
-# 'with' directs the enclosed UI elements into a particular container.
 with st.sidebar:
     st.header('Your knowledge library')
     st.write('Ask one question or combine topics. Answers include passages from the supplied dataset.')
@@ -52,9 +44,6 @@ def get_rag(config, report_stamp):
     time forces a fresh object instead of reusing an outdated dataset catalog.
     Cached resources may be shared across sessions; chat messages are not stored
     on this RAG object.
-
-    Used by:
-        This file: question-submission block. Streamlit caches the returned service object between calls.
     """
     return RAG(config)
 
@@ -65,9 +54,6 @@ def show_result(result, show_answer=True):
     Source positions match the [1]-style labels assigned during generation.
     All selected passages are available for inspection, including passages the
     answer did not cite. Expanders organize display; their contents still execute.
-
-    Used by:
-        This file: conversation-history rendering loop and the question-submission block after a successful answer.
     """
     if show_answer:
         st.markdown(result['answer'])

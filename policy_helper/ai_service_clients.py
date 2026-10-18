@@ -1,10 +1,7 @@
-"""Connect application code through LangChain model and vector-store integrations.
+"""Shared settings and LangChain integrations for OpenAI and Pinecone.
 
-An SDK is a library that handles HTTP requests and service response objects.
-OpenAI supplies embeddings and model responses through LangChain; Pinecone stores
-and searches vectors. Its SDK is retained for index administration and fetch-based
-verification. Keep connection details here so ingestion and chat use the same setup.
-Importing this module does not connect or upload anything.
+The Pinecone SDK handles index administration and ingestion verification.
+Importing this module does not create clients or make service requests.
 """
 import os
 import time
@@ -19,48 +16,34 @@ from pinecone import Pinecone, ServerlessSpec
 
 @dataclass
 class AIModels:
-    """Bundle the configured LangChain chat and embedding models.
-
-    Used by: clients() constructs this bundle; RAG uses both members, while
-    ingestion uses only embeddings. Constructing a wrapper is not model inference.
-    """
+    """Configured LangChain chat and embedding clients."""
 
     chat: ChatOpenAI
     embeddings: OpenAIEmbeddings
 
 
 class PreparedBatchEmbeddings(Embeddings):
-    """Embed contextual input while storing only the original readable passage.
+    """Embed contextual inputs while storing readable passages.
 
-    Used by: ingest_policies.py: ingest(). LangChain normally embeds exactly the text
-    it stores. Our existing index embeds title + heading + passage but stores the
-    passage in metadata['text']. This batch adapter preserves that layout exactly.
+    The adapter preserves title and heading context in vectors without adding
+    those prefixes to stored passage text.
     """
 
     def __init__(self, embeddings, chunks):
-        """Keep one ordered batch and the configured LangChain embedding wrapper.
-
-        Used by: ingest_policies.py: ingest(), once per batch of at most 64 chunks.
-        """
+        """Keep one ordered batch and the configured LangChain embedding wrapper."""
         self.embeddings, self.chunks = embeddings, chunks
 
     def embed_documents(self, texts):
-        """Check stored passage order, then embed title + heading + passage.
+        """Verify batch order and embed each contextual input.
 
-        Used by: PineconeVectorStore.add_texts() during ingest_policies.py: ingest();
-        tests/test_policy_pipeline.py: test_prepared_embedding_adapter_preserves_context().
-        The whole prepared batch must be passed in order, not a reordered subset.
+        The complete prepared batch must be supplied in its original order.
         """
         if texts != [chunk['metadata']['text'] for chunk in self.chunks]:
             raise ValueError('Prepared embedding batch does not match uploaded passages')
         return self.embeddings.embed_documents([chunk['embedding_text'] for chunk in self.chunks])
 
     def embed_query(self, text):
-        """Delegate a query to the underlying embedding model.
-
-        Used by: LangChain's Embeddings interface if this adapter is queried.
-        Normal RAG retrieval uses embed() with AIModels.embeddings instead.
-        """
+        """Delegate a query to the underlying embedding model."""
         return self.embeddings.embed_query(text)
 
 
@@ -70,20 +53,15 @@ def vector_store(index, embeddings, namespace):
     text_key='text' makes existing ingested records readable without re-ingestion.
     Search results are LangChain Documents whose page_content contains the stored
     text; their metadata contains the other fields and id identifies the vector.
-
-    Used by: ingest_policies.py: ingest(); policy_question_answering.py: RAG.retrieve().
     """
     return PineconeVectorStore(index=index, embedding=embeddings, text_key='text', namespace=namespace)
 
 
 @dataclass(frozen=True)
 class Settings:
-    """Configuration shared by ingestion, chat, and evaluation.
+    """Immutable ingestion and chat configuration suitable for resource cache keys.
 
-    @dataclass generates an initializer from the fields below. frozen=True makes
-    instances immutable, helping prevent accidental configuration changes and
-    allowing Streamlit to use them as cache keys. Secrets stay in environment
-    variables rather than being stored in this object or an ingestion report.
+    Credentials stay in environment variables, outside this object and reports.
     """
     index: str
     namespace: str
@@ -96,24 +74,15 @@ class Settings:
     embedding_dimensions: int = 512
 
     def __post_init__(self):
-        """Validate configured embedding dimensions.
-
-        Used by:
-            Called automatically by the dataclass-generated initializer whenever Settings(...) is constructed, including Settings.read().
-        """
+        """Validate configured embedding dimensions."""
         if self.embedding_dimensions <= 0:
             raise ValueError('EMBEDDING_DIMENSIONS must be a positive integer')
 
     @classmethod
     def read(cls):
-        """Load .env, then build Settings using environment values or defaults.
+        """Load .env without overriding process environment values.
 
-        cls means this class; cls(...) creates an instance. load_dotenv does not
-        overwrite values already supplied by the process environment by default.
-        An empty namespace is allowed here; the chat readiness check rejects it.
-
-        Used by:
-            ingest_policies.py: main(); evaluate_policy_answers.py: main(); policy_chat_app.py: top-level configuration setup.
+        The chat readiness check rejects an empty namespace.
         """
         load_dotenv()
         return cls(os.getenv('PINECONE_INDEX', 'employee-policy-helper'),
@@ -132,11 +101,6 @@ def clients(settings, create=False):
     one. Only ingestion passes create=True. Chat must never create a missing index.
     A Pinecone index holds vectors; a namespace partitions records within it.
     Network/authentication errors are allowed to propagate to the calling layer.
-
-    Used by:
-        ingest_policies.py: main() with create=True; 
-        policy_helper/policy_question_answering.py: RAG.__init__() with creation disabled by default.
-        Direct test/fixture callers in tests/test_policy_pipeline.py: test_old_index_dimensions_rejected().
     """
     missing = [key for key in ('OPENAI_API_KEY', 'PINECONE_API_KEY') if not os.getenv(key)]
     if missing:
@@ -164,7 +128,7 @@ def clients(settings, create=False):
             metric='cosine',
             spec=ServerlessSpec(cloud=settings.cloud, region=settings.region),
         )
-    # Index creation is asynchronous. '_' means we do not use the loop counter.
+    # Index creation is asynchronous; poll until ready.
     for _ in range(30):
         description = pc.describe_index(settings.index)
         if description.dimension != settings.embedding_dimensions or description.metric != 'cosine':
@@ -186,12 +150,6 @@ def embed(ai, texts, model, dimensions=512):
     Embeddings represent meaning for similarity search; they are not generated
     answers. Both stored passages and incoming questions must use the same model.
     LangChain returns vectors in input order so they stay paired with their text.
-
-    Used by:
-        ingest_policies.py: ingest() for post-upload retrieval-check embeddings only.
-        Chunk uploads instead use PreparedBatchEmbeddings through add_texts().
-        policy_helper/policy_question_answering.py: RAG.retrieve() for focused questions.
-        Direct test/fixture callers in tests/test_policy_pipeline.py: test_configured_dimensions_reach_openai().
     """
     # The LangChain model is configured once in clients(); prevent accidental drift.
     if ai.embeddings.model != model or ai.embeddings.dimensions != dimensions:
@@ -200,15 +158,10 @@ def embed(ai, texts, model, dimensions=512):
 
 
 def retry(operation):
-    """Run a callable up to four times for selected temporary service failures.
+    """Retry HTTP 429, HTTP 5xx and supported connection or timeout failures.
 
-    Callers pass lambda: service_call(...), a small unnamed function that delays
-    the request until invoked here. Retry HTTP 429 (rate limit), HTTP 5xx (server
-    error), and the listed connection/timeout types. Other failures are re-raised
-    immediately; this helper does not retry every SDK-specific exception type.
-
-    Used by:
-        ingest_policies.py: verify() and ingest(); policy_helper/policy_question_answering.py: the search() helper inside RAG.retrieve().
+    Run the operation at most four times with exponential backoff. Other errors
+    propagate immediately; not every SDK exception type is retryable.
     """
     for attempt in range(4):
         try:
